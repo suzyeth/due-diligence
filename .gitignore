@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.aws/
+*.log
+
+# Runtime state, not source: cached gov.uk pages, the source-health ledger and
+# the human's acknowledgements. src/sources.py recreates these directories on
+# demand, so a fresh clone works with none of it present. Committing them would
+# also freeze a snapshot of the very pages this agent exists to re-check.
+data/
+
+# Private working notes, kept local. This repository is public: it carries the
+# deliverable, not the author's planning. These files hold personal scheduling
+# and commitments to unrelated projects that have no business being published.
+CLAUDE.md
+FOCUS.md
+docs/
+

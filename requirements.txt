@@ -1,0 +1,20 @@
+# Exact pins, not ranges: a judge cloning this repo should get the versions the
+# demos were recorded against, not whatever resolved that morning.
+# Verified working on Python 3.10.6.
+
+# The agent framework this hackathon is built around.
+strands-agents==1.51.0
+
+# Bedrock provider transport. Strands imports it lazily, so it is a direct
+# dependency for us even though it is not imported by name in src/.
+boto3==1.43.68
+
+# Schemas for structured_output_model. Every extracted rule is validated here.
+pydantic==2.13.4
+
+# Primary-source fetching and text extraction (src/sources.py).
+httpx==0.28.1
+beautifulsoup4==4.15.0
+
+# Tests (src/deadlines.py logic, no model and no network).
+pytest==9.1.1
