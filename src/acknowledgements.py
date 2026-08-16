@@ -15,7 +15,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import DatedObligation
+from .models import DatedObligation, Finding
 
 ACK_FILE = Path(__file__).resolve().parent.parent / "data" / "acknowledged.json"
 
@@ -23,6 +23,17 @@ ACK_FILE = Path(__file__).resolve().parent.parent / "data" / "acknowledged.json"
 def obligation_key(obligation: DatedObligation) -> str:
     """Identity of one obligation occurrence — same duty, same due date."""
     return f"{obligation.name}|{obligation.due_on.isoformat()}"
+
+
+def verdict_key(finding: Finding) -> str:
+    """Identity of one judgement — same duty, same answer.
+
+    The verdict is part of the key on purpose. "VAT does not apply to you" and
+    "VAT applies to you" are different news about the same duty, so an
+    acknowledgement of the first must not silence the second. That is the case
+    the product exists for: the day something starts applying.
+    """
+    return f"verdict|{finding.verdict.obligation}|{finding.verdict.verdict.value}"
 
 
 def _load() -> dict[str, str]:
@@ -39,12 +50,25 @@ def load_acknowledged() -> frozenset[str]:
     return frozenset(_load())
 
 
-def acknowledge(obligation: DatedObligation, when: datetime | None = None) -> None:
-    """Record that the human has been told about this one."""
+def _record(key: str, when: datetime | None) -> None:
     records = _load()
-    records[obligation_key(obligation)] = (when or datetime.now(timezone.utc)).isoformat()
+    records[key] = (when or datetime.now(timezone.utc)).isoformat()
     ACK_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACK_FILE.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def acknowledge(obligation: DatedObligation, when: datetime | None = None) -> None:
+    """Record that the human has been told about this deadline."""
+    _record(obligation_key(obligation), when)
+
+
+def acknowledge_verdict(finding: Finding, when: datetime | None = None) -> None:
+    """Record that the human knows this duty applies — or does not.
+
+    Separate from acknowledging a deadline: knowing that MTD applies to you says
+    nothing about whether you know a particular quarter is overdue.
+    """
+    _record(verdict_key(finding), when)
 
 
 def clear() -> None:

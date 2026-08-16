@@ -88,13 +88,19 @@ mistaken for "nothing has changed".
 
 Exactly four things justify interrupting someone:
 
-1. A new obligation started applying to them
+1. An obligation **newly** started applying to them
 2. A deadline entered the danger window and has not been acknowledged
 3. The rules changed in a way that affects them
 4. The agent could not verify its own sources
 
-Everything else is silence. In the demo below, the third person — comfortably
-under every threshold — produces no notification at all.
+The word *newly* in the first one is load-bearing. "MTD applies to you" is news
+exactly once; announcing it again on every run is how a notification becomes
+wallpaper, and it is the behaviour this product exists to replace. So verdicts
+are acknowledged like deadlines are, and a standing duty goes quiet.
+
+What acknowledgement can never silence: blindness, a rule change, or an
+obligation that could not be dated. Those speak every time, by design —
+`tests/test_silence.py` fails if that ever stops being true.
 
 ### Three-state verdicts
 
@@ -106,7 +112,64 @@ refuses. It never assumes an unknown figure is small.
 
 ---
 
-## Demo
+## Using it
+
+```bash
+python -m src.cli check
+```
+
+That is the whole product. The first run asks a short set of questions and
+stores the answers; every run after that does the work and **says nothing at
+all** unless something genuinely needs you — not a heartbeat, not an "all
+clear", no output and exit code 0. An unattended runner reads the exit code:
+
+| Exit | Meaning |
+|---|---|
+| `0` | Nothing needs you |
+| `10` | Something needs you |
+| `1` | The agent could not run |
+
+When it does speak, it shows only what is new, then why it broke silence:
+
+```
+🔴 VAT registration — APPLIES
+   why: rolling 12-month taxable turnover is £96,000, which exceeds the
+        £90,000 registration threshold, crossed in June 2026.
+   source: https://www.gov.uk/vat-registration/when-to-register (checked 2026-08-16)
+
+⛔ 2026-07-30 (17 days ago)  VAT registration — turnover passed £90,000
+     if missed: registration takes effect 2026-08-01 regardless of when you
+                register, so VAT is owed on sales from that date onward
+                whether or not you charged it
+
+  Why you are seeing this:
+    → obligation applies to you: VAT registration
+    → VAT registration — turnover passed £90,000 was due 17 days ago
+```
+
+```bash
+python -m src.cli ack
+```
+
+Acknowledging is what ends a notification — never a timer. An unfiled statutory
+return must not quietly disappear because a week went by, and it must not nag
+forever either, so a human saying "I've seen it" is the only exit. Acknowledging
+a verdict and acknowledging a deadline are separate: knowing MTD applies to you
+says nothing about knowing that a particular quarter is overdue.
+
+Once everything outstanding is acknowledged, `check` goes back to printing
+nothing. That is the intended steady state.
+
+```bash
+python -m src.cli check --report   # show everything, including what is settled
+python -m src.cli profile          # what it currently believes about you
+python -m src.cli profile --reset  # forget it and ask again
+```
+
+## Behaviour demos
+
+Three scripts that exercise specific behaviours with fixed inputs, for anyone
+who wants to see them without going through onboarding.
 
 ```bash
 python run_applicability.py
@@ -144,9 +207,12 @@ The three ways this is supposed to fail safely:
 python -m pytest tests/ -q
 ```
 
-35 tests over the date arithmetic of both obligations. No model, no network.
-One of them, `test_the_extracted_threshold_is_what_gets_reported`, exists purely
-to fail if anyone ever hardcodes the VAT threshold.
+47 tests over the date arithmetic of both obligations and the silence contract.
+No model, no network. Two of them are there to fail loudly if the product's
+central claims quietly stop being true:
+`test_the_extracted_threshold_is_what_gets_reported` (someone hardcoded a
+gov.uk figure) and `test_the_same_obligation_is_silent_once_acknowledged`
+(the agent started nagging).
 
 ---
 
@@ -220,6 +286,9 @@ without a model or a network.
 | `src/vat.py` | VAT verdict → registration deadline. Month-relative arithmetic, survives year boundaries and short Februaries |
 | `src/acknowledgements.py` | What the human has already seen, so a missed deadline neither vanishes nor nags forever |
 | `src/pipeline.py` | `fetch → extract → diff → judge → schedule → decide whether to speak` |
+| `src/cli.py` | The product surface. Enforces the silence contract and the exit codes |
+| `src/onboarding.py` | The one conversation. "I don't know" is a first-class answer here |
+| `src/profile.py` | The answers, between runs. An agent re-briefed every time is just a script |
 | `src/console.py` | UTF-8 stdout, so the report renders on any terminal |
 
 ---
@@ -259,7 +328,7 @@ pip install -r requirements.txt
 ```
 
 ```bash
-python run_applicability.py
+python -m src.cli check
 ```
 
 On macOS or Linux, activate with `source .venv/bin/activate` instead.

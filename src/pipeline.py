@@ -17,7 +17,7 @@ from .agents import (
     judge_applicability,
     judge_vat_applicability,
 )
-from .acknowledgements import load_acknowledged
+from .acknowledgements import load_acknowledged, verdict_key
 from .deadlines import build_calendar, needs_attention
 from .models import (
     DatedObligation,
@@ -64,7 +64,24 @@ class RunReport:
         return needs_attention(self.obligations, self.acknowledged)
 
     def _with_verdict(self, verdict: Verdict) -> tuple[Finding, ...]:
-        return tuple(f for f in self.findings if f.verdict.verdict is verdict)
+        """Findings with this verdict that the human has NOT already been told.
+
+        The filter is the difference between the four reasons as designed and an
+        agent that reannounces a standing duty forever. "MTD applies to you" is
+        news exactly once; after that it is the weather.
+        """
+        return tuple(
+            f
+            for f in self.findings
+            if f.verdict.verdict is verdict and verdict_key(f) not in self.acknowledged
+        )
+
+    @property
+    def unacknowledged_findings(self) -> tuple[Finding, ...]:
+        """Judgements the human has not yet been told — the ones worth surfacing."""
+        return self._with_verdict(Verdict.APPLIES) + self._with_verdict(
+            Verdict.INSUFFICIENT_INFO
+        )
 
     @property
     def should_interrupt_human(self) -> bool:
@@ -73,9 +90,9 @@ class RunReport:
             self.blind_reason  # 4. the agent cannot see
             or self.schedule_errors  # 4. (same reason, different source)
             or self.rule_changes  # 3. the rules moved
-            or self._with_verdict(Verdict.APPLIES)  # 1. a duty landed on you
+            or self._with_verdict(Verdict.APPLIES)  # 1. a duty NEWLY landed on you
             or self.unacknowledged  # 2. a deadline entered the danger window
-            or self._with_verdict(Verdict.INSUFFICIENT_INFO)  # needs a human fact
+            or self._with_verdict(Verdict.INSUFFICIENT_INFO)  # an unanswered question
         )
 
     def interrupt_reasons(self) -> list[str]:
