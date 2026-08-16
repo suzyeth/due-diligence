@@ -63,6 +63,30 @@ class UserSituation(Frozen):
     )
     already_signed_up_to_mtd: bool = False
 
+    # ── VAT runs on a different clock from MTD ────────────────────────────────
+    # MTD is tested against a completed tax year; VAT is tested against a rolling
+    # 12 months that can tip over in any month. The two need separate figures,
+    # and conflating them is exactly the mistake this agent is meant to catch.
+    rolling_12m_turnover_gbp: int | None = Field(
+        default=None,
+        description="Taxable turnover over the last 12 months on a rolling basis. "
+        "None means the user does not know — that is a valid state.",
+    )
+    vat_threshold_crossed_in: date | None = Field(
+        default=None,
+        description="Any date inside the month the rolling total went over the "
+        "threshold. The registration deadline is derived from that month's end, "
+        "so without it the obligation can be judged but not dated.",
+    )
+    expects_to_exceed_vat_threshold_soon: bool | None = Field(
+        default=None,
+        description="The forward-looking test asks what the person EXPECTS, which "
+        "is a fact only they hold — no amount of source-checking settles it. None "
+        "means unanswered, and the honest response to that is to ask once rather "
+        "than to assume either way.",
+    )
+    already_vat_registered: bool = False
+
     def describe(self) -> str:
         """Render as plain prose for the reasoning agent."""
         parts = [
@@ -77,6 +101,42 @@ class UserSituation(Frozen):
         parts.append(
             "already signed up to MTD" if self.already_signed_up_to_mtd else "not signed up to MTD"
         )
+        return "; ".join(parts)
+
+    def describe_for_vat(self) -> str:
+        """The VAT-relevant facts only, so the judge is not handed MTD figures.
+
+        Keeping the two descriptions apart is deliberate: shown both, a model
+        will reach for the prior-year figure when the rolling one is missing.
+        """
+        parts = [
+            "already VAT registered" if self.already_vat_registered else "not VAT registered",
+        ]
+        if self.rolling_12m_turnover_gbp is None:
+            parts.append(
+                "rolling 12-month taxable turnover: UNKNOWN — the user does not know this figure"
+            )
+        else:
+            parts.append(
+                f"rolling 12-month taxable turnover: £{self.rolling_12m_turnover_gbp:,}"
+            )
+        if self.vat_threshold_crossed_in is None:
+            parts.append("month the threshold was crossed: not known")
+        else:
+            parts.append(
+                f"went over during {self.vat_threshold_crossed_in:%B %Y}"
+            )
+        if self.expects_to_exceed_vat_threshold_soon is None:
+            parts.append(
+                "expects to go over the threshold in the near future: NOT ANSWERED"
+            )
+        elif self.expects_to_exceed_vat_threshold_soon:
+            parts.append("expects to go over the threshold within the coming weeks: YES")
+        else:
+            parts.append(
+                "expects to go over the threshold within the coming weeks: NO "
+                "(the person has been asked and says no)"
+            )
         return "; ".join(parts)
 
 
@@ -194,6 +254,51 @@ class QuarterlyRules(Frozen):
     def penalty_is_verified(self) -> bool:
         """Zero is not a plausible penalty rule — treat it as 'not extracted'."""
         return bool(self.points_before_fine) and bool(self.fine_gbp)
+
+
+class VatRules(Frozen):
+    """The VAT registration test, read off its own primary source.
+
+    Every field is optional because extraction can fail, and a missing figure has
+    to stay missing. `0` is never an acceptable stand-in: a zero-day registration
+    window would render as a deadline that has already passed.
+    """
+
+    registration_threshold_gbp: int | None = Field(
+        default=None,
+        description="Taxable turnover figure above which registration is required, "
+        "e.g. 90000. Null if the page does not state it — never guess, never use 0.",
+    )
+    lookback_months: int | None = Field(
+        default=None,
+        description="How many months of turnover the rolling test looks back over, "
+        "e.g. 12. Null if not stated.",
+    )
+    forward_look_days: int | None = Field(
+        default=None,
+        description="The forward-looking test: if turnover is expected to exceed the "
+        "threshold within this many days, registration is required. Null if not stated.",
+    )
+    register_within_days_of_month_end: int | None = Field(
+        default=None,
+        description="Days after the END OF THE MONTH in which the threshold was "
+        "crossed by which registration must happen. Null if not stated, never 0.",
+    )
+    effective_from_months_after: int | None = Field(
+        default=None,
+        description="Registration takes effect on the first day of the Nth month "
+        "after the threshold was crossed. For 'the first day of the second month "
+        "after', N is 2. Null if not stated, never 0.",
+    )
+
+    @property
+    def is_datable(self) -> bool:
+        """Whether there is enough here to place a real date on a calendar."""
+        return bool(
+            self.registration_threshold_gbp
+            and self.register_within_days_of_month_end
+            and self.effective_from_months_after
+        )
 
 
 class DeadlineStatus(str, Enum):

@@ -49,6 +49,11 @@ SOURCES: tuple[Source, ...] = (
         url="https://www.gov.uk/guidance/use-making-tax-digital-for-income-tax/send-quarterly-updates",
         expect_text="quarterly update",
     ),
+    Source(
+        key="vat_registration",
+        url="https://www.gov.uk/vat-registration/when-to-register",
+        expect_text="taxable turnover",
+    ),
 )
 
 

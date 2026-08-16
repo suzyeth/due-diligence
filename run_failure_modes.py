@@ -20,6 +20,11 @@ PERSON = UserSituation(
     has_property_income=False,
     prior_year_turnover_gbp=62_000,
     prior_year_label="2024 to 2025",
+    # Fully answered on the VAT side so each scenario below shows exactly one
+    # failure. An unanswered question is itself a reason to speak, and mixing it
+    # in would blur which behaviour is being demonstrated.
+    rolling_12m_turnover_gbp=71_000,
+    expects_to_exceed_vat_threshold_soon=False,
 )
 
 
@@ -68,7 +73,7 @@ def scenario_blind() -> None:
     )
 
     report = run(PERSON, source=dead)
-    print(f"  finding produced? {report.finding is not None}  (must be False)")
+    print(f"  findings produced? {len(report.findings)}  (must be 0)")
     print(f"  blind_reason: {report.blind_reason}")
     print(f"  consecutive_failures: {report.health.consecutive_failures}")
     print(f"  is_blind: {report.health.is_blind}")
@@ -76,7 +81,7 @@ def scenario_blind() -> None:
     for reason in report.interrupt_reasons():
         print(f"    → {reason}")
 
-    if report.finding is not None:
+    if report.findings:
         print("  ❌ produced a verdict despite being unable to verify — unsafe")
 
 
@@ -92,7 +97,7 @@ def scenario_structure_changed() -> None:
     )
 
     report = run(PERSON, source=restructured)
-    print(f"  finding produced? {report.finding is not None}  (must be False)")
+    print(f"  findings produced? {len(report.findings)}  (must be 0)")
     print(f"  blind_reason: {report.blind_reason}")
     print(f"  interrupt the human? {report.should_interrupt_human}")
 

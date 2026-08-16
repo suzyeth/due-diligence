@@ -15,7 +15,13 @@ from strands.models import Model
 from strands.models.bedrock import BedrockModel
 
 from .excerpt import select
-from .models import ApplicabilityVerdict, MtdRuleSet, QuarterlyRules, UserSituation
+from .models import (
+    ApplicabilityVerdict,
+    MtdRuleSet,
+    QuarterlyRules,
+    UserSituation,
+    VatRules,
+)
 
 # An inference profile ID, not a bare model ID: Claude 4.x on Bedrock is only
 # reachable cross-region, and the bare `anthropic.` ID fails at invoke time.
@@ -27,6 +33,7 @@ DEFAULT_REGION = "us-east-1"
 # silently drops them and the model fills the gap with a plausible zero.
 MANDATION_ANCHORS = ("qualifying income", "6 April 2026")
 SCHEDULE_ANCHORS = ("update deadline", "miss a deadline", "penalty point", "tax year")
+VAT_ANCHORS = ("taxable turnover", "30 days", "effective date of registration")
 
 EXTRACTOR_PROMPT = """\
 You extract tax rules from official UK government pages.
@@ -66,13 +73,26 @@ def build_model(model_id: str | None = None, region: str | None = None) -> Model
     )
 
 
+def _reasoner(system_prompt: str, schema: type, model: Model | None) -> Agent:
+    """Every agent in this file has the same shape: silent, structured, pinned.
+
+    `callback_handler=None` matters more than it looks. Left at its default, the
+    model's own narration streams to stdout and lands in the middle of the
+    report — and a report that says "I need to determine whether..." before its
+    conclusion undercuts the one thing this output has to be, which is scannable.
+    Only `structured_output` is ever read, so the prose is pure noise.
+    """
+    return Agent(
+        model=model or build_model(),
+        system_prompt=system_prompt,
+        structured_output_model=schema,
+        callback_handler=None,
+    )
+
+
 def extract_rules(page_text: str, model: Model | None = None) -> MtdRuleSet:
     """Read mandation rules off a primary-source page."""
-    agent = Agent(
-        model=model or build_model(),
-        system_prompt=EXTRACTOR_PROMPT,
-        structured_output_model=MtdRuleSet,
-    )
+    agent = _reasoner(EXTRACTOR_PROMPT, MtdRuleSet, model)
     excerpt = select(page_text, MANDATION_ANCHORS)
     result = agent(
         "Extract every Making Tax Digital for Income Tax mandation phase from this page.\n\n"
@@ -101,16 +121,96 @@ Rules you must follow:
 
 def extract_quarterly_rules(page_text: str, model: Model | None = None) -> QuarterlyRules:
     """Read the quarterly update schedule and penalties off a primary-source page."""
-    agent = Agent(
-        model=model or build_model(),
-        system_prompt=SCHEDULE_PROMPT,
-        structured_output_model=QuarterlyRules,
-    )
+    agent = _reasoner(SCHEDULE_PROMPT, QuarterlyRules, model)
     excerpt = select(page_text, SCHEDULE_ANCHORS)
     result = agent(
         "Extract the standard quarterly update periods, their deadlines, whether "
         "updates are cumulative, and the penalty rules from this page.\n\n"
         f"--- PAGE TEXT ---\n{excerpt.text}"
+    )
+    return result.structured_output
+
+
+VAT_EXTRACT_PROMPT = """\
+You extract VAT registration rules from official UK government pages.
+
+Rules you must follow:
+- Report ONLY figures printed in the text you are given.
+- The registration threshold is the turnover figure above which a business MUST
+  register. If the page says "goes over £X", record X.
+- The rolling test looks back over a number of months; record that number.
+- The forward-looking test is expressed in days; record that number.
+- The registration window is counted from the END OF THE MONTH in which the
+  threshold was crossed. Record how many days.
+- "Your effective date of registration is the first day of the second month
+  after you go over the threshold" means effective_from_months_after is 2.
+- If a figure is not stated in the text, leave it null. Never write 0 to mean
+  'not stated' — a zero will be read as a real rule and rendered as a deadline
+  that has already passed.
+"""
+
+
+def extract_vat_rules(page_text: str, model: Model | None = None) -> VatRules:
+    """Read the VAT registration test off a primary-source page."""
+    agent = _reasoner(VAT_EXTRACT_PROMPT, VatRules, model)
+    excerpt = select(page_text, VAT_ANCHORS)
+    result = agent(
+        "Extract the VAT registration threshold, the rolling look-back period, "
+        "the forward-looking test, the registration deadline and the effective "
+        "date rule from this page.\n\n"
+        f"--- PAGE TEXT ---\n{excerpt.text}"
+    )
+    return result.structured_output
+
+
+VAT_JUDGE_PROMPT = """\
+You decide whether UK VAT registration is required for one specific person.
+
+Rules you must follow:
+- Decide using ONLY the supplied rules and the person's stated situation.
+- The VAT test is a ROLLING one: taxable turnover over the last 12 months, which
+  can tip over in any month. It is NOT the prior tax year, and it is NOT the
+  figure used for Making Tax Digital. If you are only given a prior-tax-year
+  figure, that does not settle the VAT question.
+- If any fact needed for the decision is unknown, return verdict
+  "insufficient_info" and list exactly what is missing. Do NOT guess, and do NOT
+  assume a missing figure is small.
+- Someone already registered for VAT has no outstanding registration obligation;
+  return "does_not_apply" and say why.
+- The forward-looking test turns on what the person EXPECTS. If they have been
+  asked and said no, that test is settled — treat it as not triggered and do NOT
+  report it as a missing fact. Only report it missing when it is NOT ANSWERED.
+- Leave mandatory_from null. Every VAT date is derived arithmetically from the
+  month the threshold was crossed, and a date estimated here would contradict
+  the computed one. Judge whether it applies; the dates are not yours to set.
+- Set obligation to 'VAT registration'.
+"""
+
+
+def judge_vat_applicability(
+    rules: VatRules,
+    situation: UserSituation,
+    today: str,
+    model: Model | None = None,
+) -> ApplicabilityVerdict:
+    """Decide whether the person is required to register for VAT."""
+    agent = _reasoner(VAT_JUDGE_PROMPT, ApplicabilityVerdict, model)
+    stated = [
+        f"registration threshold: £{rules.registration_threshold_gbp:,}"
+        if rules.registration_threshold_gbp
+        else "registration threshold: NOT EXTRACTED from the source",
+        f"rolling look-back: {rules.lookback_months} months"
+        if rules.lookback_months
+        else "rolling look-back period: NOT EXTRACTED",
+        f"forward-looking test: expected to exceed within {rules.forward_look_days} days"
+        if rules.forward_look_days
+        else "forward-looking test: NOT EXTRACTED",
+    ]
+    result = agent(
+        "Decide whether this person is required to register for VAT.\n\n"
+        f"TODAY: {today}\n\n"
+        "RULES (extracted from gov.uk):\n" + "\n".join(f"- {s}" for s in stated) + "\n\n"
+        f"THIS PERSON: {situation.describe_for_vat()}\n"
     )
     return result.structured_output
 
@@ -122,11 +222,7 @@ def judge_applicability(
     model: Model | None = None,
 ) -> ApplicabilityVerdict:
     """Decide whether MTD for Income Tax applies to this person."""
-    agent = Agent(
-        model=model or build_model(),
-        system_prompt=JUDGE_PROMPT,
-        structured_output_model=ApplicabilityVerdict,
-    )
+    agent = _reasoner(JUDGE_PROMPT, ApplicabilityVerdict, model)
     phases = "\n".join(
         f"- over £{p.qualifying_income_over_gbp:,} (tested on the {p.tax_year_tested} return)"
         f" becomes mandatory on {p.mandatory_from}"

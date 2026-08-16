@@ -24,6 +24,11 @@ PERSON = UserSituation(
     has_property_income=False,
     prior_year_turnover_gbp=62_000,
     prior_year_label="2024 to 2025",
+    # Answered, and under the VAT threshold: this script is about the MTD
+    # calendar, and an unanswered VAT question would drag an unrelated
+    # "I need to ask you something" into a demo that is not about that.
+    rolling_12m_turnover_gbp=71_000,
+    expects_to_exceed_vat_threshold_soon=False,
 )
 
 
@@ -36,12 +41,13 @@ def main() -> None:
 
     report = run(PERSON)
 
-    if report.finding:
-        print(report.finding.render())
+    for finding in report.findings:
+        print(finding.render())
 
-    if report.schedule_error:
-        print(f"\n  ⚠️ could not verify the filing schedule: {report.schedule_error}")
-    elif report.obligations:
+    for error in report.schedule_errors:
+        print(f"\n  ⚠️ could not date an obligation: {error}")
+
+    if report.obligations:
         print(f"\n  FILING CALENDAR ({len(report.obligations)} dates)\n")
         for obligation in report.obligations:
             print(obligation.render())

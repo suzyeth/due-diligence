@@ -1,8 +1,9 @@
 # Due Diligence
 
 **A background agent that works out which UK tax obligations actually apply to a
-self-employed person, traces every conclusion back to gov.uk, and stays silent
-unless there is genuinely something for a human to decide.**
+self-employed person — across two schemes running on two different clocks —
+traces every conclusion back to gov.uk, and stays silent unless there is
+genuinely something for a human to decide.**
 
 Built with the [Strands Agents SDK](https://github.com/strands-agents) for the
 Agents for Humans hackathon — **Professional Agents** track.
@@ -43,6 +44,25 @@ contain at least five traps that a reminder app cannot handle:
 
 And the threshold falling from £50k to £20k means each successive wave is
 smaller, more marginal, and **less likely to have an accountant**.
+
+### It is not one clock, it is several
+
+The same person is simultaneously subject to VAT registration, which runs on a
+completely different timebase — and mixing the two up is the single easiest way
+to miss a deadline:
+
+| | Making Tax Digital | VAT registration |
+|---|---|---|
+| Measured over | A **completed tax year** | A **rolling 12 months** |
+| Which figure | Turnover on the prior year's filed return | Taxable turnover as at today |
+| When it can trigger | Only at a tax-year boundary | **Any month** |
+| Deadline | Fixed calendar dates (7 Aug, 7 Nov …) | 30 days from the **end of the month you crossed in** |
+| Also triggered by | — | Merely **expecting** to cross within 30 days |
+
+Someone under £50,000 for MTD can still be over £90,000 for VAT, and someone who
+crossed the VAT threshold in June has a July deadline they will not find on any
+annual calendar. Working out which of these apply, on which clock, is the
+judgement this agent exists to make.
 
 ---
 
@@ -92,13 +112,14 @@ refuses. It never assumes an unknown figure is small.
 python run_applicability.py
 ```
 
-Three people, one run each:
+Four people, both obligations judged for each:
 
-| Person | Verdict | Does it speak? |
-|---|---|---|
-| Sole trader, £62,000 turnover (2024–25) | 🔴 `applies` from 2026-04-06 | Yes — and flags the 7 Aug deadline already missed |
-| Sole trader with property income, **turnover unknown** | 🟡 `insufficient_info` | Yes — names the one fact it needs |
-| Sole trader, £14,000 turnover | ⚪ `does_not_apply` | **No — stays silent** |
+| Person | MTD | VAT | Does it speak? |
+|---|---|---|---|
+| £62,000 prior year, £71,000 rolling | 🔴 `applies` | ⚪ `does_not_apply` | Yes — flags the 7 Aug deadline already missed |
+| Property income, **turnover unknown** | 🟡 `insufficient_info` | 🟡 `insufficient_info` | Yes — names exactly which facts it needs |
+| £14,000, under everything | ⚪ `does_not_apply` | ⚪ `does_not_apply` | **No — stays silent** |
+| £68,000 prior year, **crossed £90,000 in June** | 🔴 `applies` | 🔴 `applies` | Yes — two duties, two deadlines, two different clocks |
 
 ```bash
 python run_deadlines.py
@@ -123,7 +144,9 @@ The three ways this is supposed to fail safely:
 python -m pytest tests/ -q
 ```
 
-19 tests over the date arithmetic. No model, no network.
+35 tests over the date arithmetic of both obligations. No model, no network.
+One of them, `test_the_extracted_threshold_is_what_gets_reported`, exists purely
+to fail if anyone ever hardcodes the VAT threshold.
 
 ---
 
@@ -131,45 +154,53 @@ python -m pytest tests/ -q
 
 ```mermaid
 flowchart TB
-    subgraph sources["sources.py — primary sources"]
-        GOV["gov.uk pages<br/>MTD mandation · quarterly schedule"]
-        SNAP[("snapshots<br/>+ health ledger")]
+    USER["UserSituation<br/><i>minimal: no tax amounts, no bank, no HMRC login</i>"]
+
+    subgraph mtd["MTD arm — tested against a completed tax year"]
+        GOVM["gov.uk<br/>mandation · quarterly schedule"]
+        EXM["extract_rules · extract_quarterly_rules<br/><i>→ MtdRuleSet · QuarterlyRules</i>"]
+        JUM["judge_applicability<br/><i>→ ApplicabilityVerdict</i>"]
+        CALM["deadlines.py<br/><i>fixed calendar dates</i>"]
+        GOVM -->|fetch| EXM --> JUM -->|applies| CALM
     end
 
-    subgraph reason["agents.py — Strands agents"]
-        EX["extract_rules<br/><i>structured_output_model → MtdRuleSet</i>"]
-        EXQ["extract_quarterly_rules<br/><i>structured_output_model → QuarterlyRules</i>"]
-        JU["judge_applicability<br/><i>structured_output_model → ApplicabilityVerdict</i>"]
+    subgraph vat["VAT arm — tested against a rolling 12 months"]
+        GOVV["gov.uk<br/>registration threshold"]
+        EXV["extract_vat_rules<br/><i>→ VatRules</i>"]
+        JUV["judge_vat_applicability<br/><i>→ ApplicabilityVerdict</i>"]
+        CALV["vat.py<br/><i>month-end + N days</i>"]
+        GOVV -->|fetch| EXV --> JUV -->|applies| CALV
     end
 
-    subgraph pure["pure logic — no model, no network"]
-        DIFF["_diff_rules<br/>rule change = an event"]
-        CAL["deadlines.py<br/>verdict → dated calendar"]
-        ACK["acknowledgements.py<br/>what the human already knows"]
-    end
-
-    USER["UserSituation<br/><i>minimal: no amounts, no bank, no HMRC login</i>"]
+    SNAP[("snapshots + health ledger")]
+    DIFF["_diff_rules<br/><i>a rule change is itself an event</i>"]
+    ACK["acknowledgements.py<br/><i>what the human already knows</i>"]
+    BLIND["blind_reason set<br/><i>→ no findings at all</i>"]
     GATE{"should_interrupt_human<br/>four reasons, nothing else"}
-    OUT["Finding + evidence chain"]
+    OUT["Findings + evidence chain<br/>merged, sorted by due date"]
     SILENT["silence"]
 
-    GOV -->|fetch| EX
-    GOV -->|fetch| EXQ
-    GOV -.->|"fetch fails / anchor missing"| BLIND["blind_reason set<br/>→ finding = None"]
-    EX --> SNAP
+    USER --> JUM
+    USER --> JUV
+    EXM --> SNAP
+    EXV --> SNAP
     SNAP --> DIFF
-    EX --> JU
-    USER --> JU
-    JU -->|applies| CAL
-    EXQ --> CAL
+    GOVM -.->|"404 / restructured"| BLIND
+    GOVV -.->|"404 / restructured"| BLIND
+    CALM --> GATE
+    CALV --> GATE
+    JUM --> GATE
+    JUV --> GATE
     DIFF --> GATE
-    CAL --> GATE
     ACK --> GATE
-    JU --> GATE
     BLIND --> GATE
     GATE -->|yes| OUT
     GATE -->|no| SILENT
 ```
+
+The two arms are deliberately independent: a dead VAT page must not suppress an
+MTD conclusion that was verified perfectly well, so each fetches, extracts,
+judges and fails on its own. They meet only at the gate.
 
 The layering is deliberate: **everything that can be pure logic is pure logic.**
 The model is used only where judgement is genuinely required — reading prose off
@@ -185,7 +216,8 @@ without a model or a network.
 | `src/sources.py` | Primary-source fetch, snapshots, health ledger. Failure is recorded, not swallowed |
 | `src/excerpt.py` | Anchor-based excerpting — sends the relevant passage, not a fixed head window |
 | `src/agents.py` | The three Strands agents. The only file that knows which model provider is in use |
-| `src/deadlines.py` | Verdict → dated obligations. Pure calendar arithmetic over extracted figures |
+| `src/deadlines.py` | MTD verdict → dated obligations. Pure calendar arithmetic over extracted figures |
+| `src/vat.py` | VAT verdict → registration deadline. Month-relative arithmetic, survives year boundaries and short Februaries |
 | `src/acknowledgements.py` | What the human has already seen, so a missed deadline neither vanishes nor nags forever |
 | `src/pipeline.py` | `fetch → extract → diff → judge → schedule → decide whether to speak` |
 | `src/console.py` | UTF-8 stdout, so the report renders on any terminal |
@@ -246,11 +278,13 @@ No state needs to be seeded — `data/` is created on first run.
 ## Scope
 
 **In:** sole traders, optionally with property income · Making Tax Digital for
-Income Tax and its quarterly schedule · gov.uk as the single primary source ·
-applicability, dates and consequences.
+Income Tax and its quarterly schedule · VAT registration · gov.uk as the single
+primary source · applicability, dates and consequences.
 
-**Out:** calculating tax owed · tax planning · limited companies and Corporation
-Tax · HMRC API integration · bank connections · countries other than the UK.
+**Out:** calculating tax owed · tax planning · Self Assessment (its deadlines are
+fixed calendar dates that need no judgement) · VAT deregistration · limited
+companies and Corporation Tax · HMRC API integration · bank connections ·
+countries other than the UK.
 
 ---
 
