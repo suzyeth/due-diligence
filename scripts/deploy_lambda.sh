@@ -46,11 +46,25 @@ aws lambda update-function-configuration --function-name "$FUNCTION" --region "$
   --environment 'Variables={AFH_DATA_DIR=/tmp/data}' --no-cli-pager >/dev/null
 aws lambda wait function-updated-v2 --function-name "$FUNCTION" --region "$REGION"
 
-echo "✓ deployed. To expose it publicly (this creates an unauthenticated URL that"
-echo "  spends money on every request — read web/app.py's rate limiter first):"
+# ── public endpoint ───────────────────────────────────────────────────────────
+# An HTTP API rather than a Lambda Function URL. The Function URL path is the
+# obvious one and it is what the docs reach for first, but on this account every
+# request to it returned 403 AccessDeniedException even with AuthType NONE and
+# the documented wildcard resource policy in place — an account-level block on
+# public Function URLs, not a misconfiguration. API Gateway is unaffected. If
+# you are reproducing this on your own account, try the Function URL first; it
+# is one fewer moving part.
+API_ID="$(aws apigatewayv2 get-apis --region "$REGION"   --query "Items[?Name=='${FUNCTION}-demo'].ApiId | [0]" --output text)"
+
+if [ "$API_ID" = "None" ] || [ -z "$API_ID" ]; then
+  echo "→ creating HTTP API"
+  API_ID="$(aws apigatewayv2 create-api --name "${FUNCTION}-demo"     --protocol-type HTTP --target "arn:aws:lambda:${REGION}:${ACCOUNT}:function:${FUNCTION}"     --region "$REGION" --query ApiId --output text)"
+  aws lambda add-permission --function-name "$FUNCTION" --region "$REGION"     --statement-id apigw-invoke --action lambda:InvokeFunction     --principal apigateway.amazonaws.com     --source-arn "arn:aws:execute-api:${REGION}:${ACCOUNT}:${API_ID}/*/*" >/dev/null
+fi
+
+echo "✓ live at https://${API_ID}.execute-api.${REGION}.amazonaws.com"
 echo
-echo "  aws lambda create-function-url-config --function-name $FUNCTION \\"
-echo "    --auth-type NONE --region $REGION --query FunctionUrl --output text"
-echo "  aws lambda add-permission --function-name $FUNCTION --region $REGION \\"
-echo "    --statement-id public --action lambda:InvokeFunctionUrl \\"
-echo "    --principal '*' --function-url-auth-type NONE"
+echo "  This endpoint is unauthenticated and spends money per request."
+echo "  Guards: the per-container rate limiter in web/app.py, the account"
+echo "  concurrency ceiling, and a monthly AWS Budgets alarm. Set one up if"
+echo "  you have not:  aws budgets create-budget --account-id $ACCOUNT ..."

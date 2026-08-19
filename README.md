@@ -8,6 +8,10 @@ genuinely something for a human to decide.**
 Built with the [Strands Agents SDK](https://github.com/strands-agents) for the
 Agents for Humans hackathon — **Professional Agents** track.
 
+**▶ Live demo: <https://e5jlgf9at6.execute-api.us-east-1.amazonaws.com>**
+(Amazon Bedrock, running on Lambda. First request after an idle spell takes
+~15s while the container starts and the gov.uk pages are read; after that ~5s.)
+
 > **Not tax advice.** This agent reports which obligations appear to apply and
 > when they fall due, with a source for every claim. It does not calculate tax
 > owed and does not do tax planning.
@@ -166,6 +170,30 @@ python -m src.cli profile          # what it currently believes about you
 python -m src.cli profile --reset  # forget it and ask again
 ```
 
+## Running the web front end
+
+```bash
+python -m uvicorn web.app:app --reload
+```
+
+The same agent, same `src/`, rendered as a page. The browser version is
+stateless — no stored profile, no acknowledgement ledger — because those are
+per-person and a shared demo must not let one visitor's "I've seen it" silence
+an obligation for everyone. The silence contract still shows, as the calm
+*nothing needs you* result.
+
+Deployment is two scripts:
+
+```bash
+bash scripts/build_lambda.sh && bash scripts/deploy_lambda.sh
+```
+
+`build_lambda.sh` carries a comment explaining why the package cannot be built
+with a plain `pip install -t`: `strands-agents` depends on `mcp`, which requires
+`pywin32` under `sys_platform == "win32"`, and pip evaluates that marker against
+the build machine rather than `--platform`. The script resolves the dependency
+graph itself with the target's markers, then installs it with `--no-deps`.
+
 ## Behaviour demos
 
 Three scripts that exercise specific behaviours with fixed inputs, for anyone
@@ -238,7 +266,7 @@ flowchart TB
         GOVV -->|fetch| EXV --> JUV -->|applies| CALV
     end
 
-    SNAP[("snapshots + health ledger")]
+    SNAP[("snapshots + health ledger<br/><i>digest match ⇒ reuse, no model call</i>")]
     DIFF["_diff_rules<br/><i>a rule change is itself an event</i>"]
     ACK["acknowledgements.py<br/><i>what the human already knows</i>"]
     BLIND["blind_reason set<br/><i>→ no findings at all</i>"]
@@ -262,6 +290,10 @@ flowchart TB
     BLIND --> GATE
     GATE -->|yes| OUT
     GATE -->|no| SILENT
+    OUT --> CLI["cli.py<br/><i>exit 10</i>"]
+    OUT --> WEB["web/app.py<br/><i>'something needs you'</i>"]
+    SILENT --> CLIQ["cli.py<br/><i>0 bytes, exit 0</i>"]
+    SILENT --> WEBQ["web/app.py<br/><i>'nothing needs you'</i>"]
 ```
 
 The two arms are deliberately independent: a dead VAT page must not suppress an
@@ -304,9 +336,21 @@ without a model or a network.
 
 Amazon Bedrock, `us.anthropic.claude-haiku-4-5`, in `us-east-1`.
 
-**Not yet done:** AgentCore deployment and a hosted live demo. The SDK provides
-no scheduling primitive, so the recurring wake-up this product implies needs
-AgentCore Runtime or EventBridge. Today the agent runs on demand from the CLI.
+### Not calling the model when the answer cannot have changed
+
+A page whose bytes are unchanged cannot have produced different rules, so
+`src/extraction_cache.py` reuses the stored extraction and skips the model. It
+takes a run from ~15s to ~5s, but the reason it exists is correctness: a model
+asked the same question twice can answer it differently, and rules that drifted
+while their source sat still would be indistinguishable from a real rule change
+— the one signal this product must never cry wolf on.
+
+The fetch, the digest comparison and the health ledger all still happen every
+run. Only the model call is skipped. The agent never stops looking.
+
+**Not yet done:** AgentCore deployment. The SDK provides no scheduling
+primitive, so the recurring wake-up this product implies needs AgentCore Runtime
+or EventBridge. Today the agent runs on demand, from the CLI or the web page.
 
 ---
 
