@@ -11,13 +11,10 @@ representation to keep in sync.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from pydantic import ValidationError
 
 from .models import UserSituation
-
-PROFILE_FILE = Path(__file__).resolve().parent.parent / "data" / "profile.json"
+from .paths import PROFILE_FILE
 
 
 def profile_exists() -> bool:

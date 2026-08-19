@@ -1,0 +1,6 @@
+# The web surface, on top of requirements.txt.
+# Split out so the CLI and the tests do not drag a web framework behind them.
+fastapi==0.121.2
+jinja2==3.1.6
+uvicorn==0.52.1      # local development server
+mangum==0.21.0       # ASGI -> AWS Lambda adapter

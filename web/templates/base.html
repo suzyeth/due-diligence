@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Due Diligence{% endblock %}</title>
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --ink-soft: #5c5a57;
+    --ink-faint: #8b8884;
+    --line: #e3e0da;
+    --accent: #1c4f3f;
+    --alert: #a4322a;
+    --warn: #9a6a10;
+    --calm: #4a7c59;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --surface: #1e1e23;
+      --ink: #eceae6;
+      --ink-soft: #a9a6a1;
+      --ink-faint: #7c7975;
+      --line: #32323a;
+      --accent: #7fc4a8;
+      --alert: #e88a80;
+      --warn: #d9ab54;
+      --calm: #8fbf9f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  header.mast { border-bottom: 1px solid var(--line); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .mast h1 { font-size: 1.5rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+  .mast p { margin: 0; color: var(--ink-soft); font-size: .95rem; }
+  .mast a { color: inherit; }
+  h2 { font-size: 1.05rem; margin: 2.5rem 0 .75rem; letter-spacing: -.005em; }
+  .disclaimer {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: .8rem 1rem; font-size: .85rem; color: var(--ink-soft); margin-bottom: 2rem;
+  }
+  .disclaimer strong { color: var(--ink); }
+  label { display: block; margin: 1.25rem 0 .3rem; font-weight: 600; font-size: .93rem; }
+  .hint { font-weight: 400; color: var(--ink-faint); font-size: .85rem; display: block; margin-top: .15rem; }
+  input[type=text], select {
+    width: 100%; padding: .6rem .7rem; font: inherit; font-size: .95rem;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem 1.25rem 1.5rem; margin: 2rem 0 0; background: var(--surface); }
+  legend { padding: 0 .5rem; font-weight: 600; font-size: .9rem; color: var(--accent); }
+  button {
+    margin-top: 2rem; padding: .75rem 1.5rem; font: inherit; font-weight: 600;
+    background: var(--accent); color: var(--bg); border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button:hover { opacity: .9; }
+  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: .82rem; }
+  footer a { color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <h1><a href="/" style="text-decoration:none">Due&nbsp;Diligence</a></h1>
+    <p>Which UK tax obligations actually apply to you — with a source for every claim.</p>
+  </header>
+
+  <div class="disclaimer">
+    <strong>Not tax advice.</strong> This reports which obligations appear to apply
+    and when they fall due, citing gov.uk for each. It does not calculate tax owed
+    and does not do tax planning.
+  </div>
+
+  {% block content %}{% endblock %}
+
+  <footer>
+    Built with the <a href="https://github.com/strands-agents">Strands Agents SDK</a>
+    on Amazon Bedrock ·
+    <a href="https://github.com/suzyeth/due-diligence">source</a> ·
+    MIT
+  </footer>
+</div>
+</body>
+</html>

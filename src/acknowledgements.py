@@ -13,11 +13,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from .models import DatedObligation, Finding
-
-ACK_FILE = Path(__file__).resolve().parent.parent / "data" / "acknowledged.json"
+from .paths import ACK_FILE
 
 
 def obligation_key(obligation: DatedObligation) -> str:

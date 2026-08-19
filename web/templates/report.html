@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Your obligations — Due Diligence{% endblock %}
+
+{% block content %}
+<style>
+  .verdict { background: var(--surface); border: 1px solid var(--line); border-left-width: 4px;
+             border-radius: var(--radius); padding: 1rem 1.15rem; margin: 1rem 0; }
+  .verdict.applies { border-left-color: var(--alert); }
+  .verdict.insufficient_info { border-left-color: var(--warn); }
+  .verdict.does_not_apply { border-left-color: var(--calm); }
+  .verdict h3 { margin: 0 0 .4rem; font-size: 1rem; display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+  .tag { font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+         padding: .15rem .5rem; border-radius: 4px; border: 1px solid currentColor; }
+  .applies .tag { color: var(--alert); }
+  .insufficient_info .tag { color: var(--warn); }
+  .does_not_apply .tag { color: var(--calm); }
+  .why { margin: .4rem 0 .75rem; color: var(--ink-soft); font-size: .93rem; }
+  .chain { border-top: 1px dashed var(--line); padding-top: .6rem; font-size: .82rem; color: var(--ink-faint); }
+  .chain a { color: var(--ink-soft); word-break: break-all; }
+  .needs { background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+           border: 1px solid var(--warn); border-radius: var(--radius); padding: .75rem 1rem; margin: .75rem 0; }
+  .needs ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+  .due { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+         padding: .9rem 1.1rem; margin: .75rem 0; }
+  .due .when { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .due.overdue .when, .due.due_soon .when { color: var(--alert); }
+  .due .meta { font-size: .85rem; color: var(--ink-soft); margin-top: .35rem; }
+  .banner { border-radius: var(--radius); padding: 1.1rem 1.25rem; margin: 0 0 1.5rem;
+            border: 1px solid var(--line); background: var(--surface); }
+  .banner.quiet { border-color: var(--calm); }
+  .banner.loud  { border-color: var(--alert); }
+  .banner h2 { margin: 0 0 .3rem; font-size: 1.1rem; }
+  .banner p { margin: 0; color: var(--ink-soft); font-size: .92rem; }
+  .again { display: inline-block; margin-top: 2.5rem; }
+</style>
+
+{% if report.blind_reason %}
+  <div class="banner loud">
+    <h2>It could not verify its sources, so it is not answering</h2>
+    <p>
+      No conclusions this run. Silence here would be worse than this message:
+      you might read it as "nothing has changed".
+    </p>
+  </div>
+  <div class="verdict insufficient_info">
+    <div class="why" style="font-family:ui-monospace,monospace;font-size:.82rem">{{ report.blind_reason }}</div>
+  </div>
+
+{% elif report.should_interrupt_human %}
+  <div class="banner loud">
+    <h2>Something needs you</h2>
+    <p>Here is what, and why it broke silence.</p>
+  </div>
+{% else %}
+  <div class="banner quiet">
+    <h2>Nothing needs you</h2>
+    <p>
+      Checked against gov.uk just now. On the command line this run would have
+      printed nothing at all — silence is the normal state, not an error.
+    </p>
+  </div>
+{% endif %}
+
+{% if report.should_interrupt_human and not report.blind_reason %}
+  <div class="needs">
+    <strong>Why you are seeing this</strong>
+    <ul>
+      {% for reason in report.interrupt_reasons() %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{% if report.findings %}
+  <h2>What applies to you</h2>
+  {% for f in report.findings %}
+    <div class="verdict {{ f.verdict.verdict.value }}">
+      <h3>
+        {{ f.verdict.obligation }}
+        <span class="tag">{{ f.verdict.verdict.value.replace('_', ' ') }}</span>
+      </h3>
+      <div class="why">{{ f.verdict.reasoning }}</div>
+      {% if f.verdict.missing_facts %}
+        <div class="why"><strong>It needs to know:</strong>
+          {{ f.verdict.missing_facts | join('; ') }}</div>
+      {% endif %}
+      <div class="chain">
+        Read from <a href="{{ f.evidence.source_url }}">{{ f.evidence.source_url }}</a><br>
+        checked {{ f.evidence.verified_at.strftime('%Y-%m-%d %H:%M') }} UTC ·
+        page fingerprint <code>{{ f.evidence.snapshot_digest }}</code>
+        {% if f.evidence.source_is_stale %}<br><strong>⚠ this check is stale — do not rely on it without a re-check</strong>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if report.rule_changes %}
+  <h2>The rules moved since the last check</h2>
+  {% for c in report.rule_changes %}
+    <div class="verdict applies">
+      <div class="why"><strong>{{ c.field }}</strong>: {{ c.previous }} → {{ c.current }}</div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if report.obligations %}
+  <h2>Dates</h2>
+  {% for o in report.obligations %}
+    <div class="due {{ o.status.value }}">
+      <span class="when">{{ o.due_on.strftime('%Y-%m-%d') }}</span>
+      —
+      {% if o.days_away < 0 %}{{ -o.days_away }} days ago
+      {% elif o.days_away == 0 %}today
+      {% else %}in {{ o.days_away }} days{% endif %}
+      <div style="margin-top:.3rem"><strong>{{ o.name }}</strong></div>
+      <div class="meta">covers {{ o.period_covered }}</div>
+      <div class="meta"><strong>if missed:</strong> {{ o.consequence_if_missed }}</div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% for e in report.schedule_errors %}
+  <div class="needs"><strong>Could not put a date on this:</strong> {{ e }}</div>
+{% endfor %}
+
+<a class="again" href="/">← Check a different situation</a>
+{% endblock %}

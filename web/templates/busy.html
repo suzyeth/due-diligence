@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Busy — Due Diligence{% endblock %}
+{% block content %}
+<h2>Too many checks just now</h2>
+<p style="color:var(--ink-soft)">
+  This is a demo deployment with a deliberate cap on how often it will call a model,
+  so that a crawler cannot run up a bill on it. Please try again in a few minutes.
+</p>
+<p style="color:var(--ink-soft)">
+  There is no queue and nothing was recorded — just come back.
+</p>
+<p><a href="/">← Start again</a></p>
+{% endblock %}

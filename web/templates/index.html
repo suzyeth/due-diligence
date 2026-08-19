@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+
+<p style="color:var(--ink-soft)">
+  Making Tax Digital for Income Tax became mandatory in April 2026 and pulls people
+  in over three years. VAT runs on a completely different clock. Answer what you
+  know — <strong style="color:var(--ink)">"I don't know" is a real answer</strong>,
+  and leaving a field blank is how you give it.
+</p>
+
+<form method="post" action="/check">
+
+  <fieldset>
+    <legend>You</legend>
+
+    <label>Are you self-employed as a sole trader?</label>
+    <select name="is_sole_trader">
+      <option value="yes" selected>Yes</option>
+      <option value="no">No</option>
+    </select>
+
+    <label>Do you receive income from UK property?</label>
+    <select name="has_property_income">
+      <option value="no" selected>No</option>
+      <option value="yes">Yes</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>Making Tax Digital — measured on your last filed return</legend>
+
+    <label>Turnover before expenses on that return
+      <span class="hint">Turnover, not profit. Leave blank if you don't know — it will say so rather than guess.</span>
+    </label>
+    <input type="text" name="prior_year_turnover" placeholder="e.g. 62,000 — or leave blank">
+
+    <label>Which tax year was that?</label>
+    <input type="text" name="prior_year_label" placeholder="2024 to 2025" value="2024 to 2025">
+
+    <label>Already signed up for Making Tax Digital?</label>
+    <select name="already_signed_up_to_mtd">
+      <option value="no" selected>No</option>
+      <option value="yes">Yes</option>
+    </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>VAT — measured on a rolling 12 months, so it needs its own figure</legend>
+
+    <label>Already registered for VAT?</label>
+    <select name="already_vat_registered">
+      <option value="no" selected>No</option>
+      <option value="yes">Yes</option>
+    </select>
+
+    <label>Taxable turnover across the last 12 months
+      <span class="hint">Rolling — not a tax year. Leave blank if you don't know.</span>
+    </label>
+    <input type="text" name="rolling_turnover" placeholder="e.g. 96,000 — or leave blank">
+
+    <label>If it has passed the registration threshold, which month?
+      <span class="hint">The deadline is counted from the end of that month, so without it the duty can be judged but not dated.</span>
+    </label>
+    <input type="text" name="vat_crossed_in" placeholder="2026-06 — or leave blank">
+
+    <label>Do you expect to pass the VAT threshold in the next few weeks?
+      <span class="hint">Only you can answer this one — no amount of source-checking settles it.</span>
+    </label>
+    <select name="expects_to_exceed">
+      <option value="">I'm not sure</option>
+      <option value="no">No</option>
+      <option value="yes">Yes</option>
+    </select>
+  </fieldset>
+
+  <button type="submit">Check my obligations</button>
+  <p class="hint" style="margin-top:.75rem">
+    Takes a few seconds: it fetches the gov.uk pages and reads the current rules off them,
+    rather than trusting anything it remembers.
+  </p>
+</form>
+
+{% endblock %}

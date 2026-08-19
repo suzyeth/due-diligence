@@ -17,14 +17,11 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .models import SourceHealth
+from .paths import DATA_DIR, HEALTH_FILE, SNAPSHOT_DIR  # noqa: F401 - re-exported
 
 USER_AGENT = "agents-for-humans-spike/0.1 (hackathon project; contact via repo)"
 FETCH_TIMEOUT_SECONDS = 20.0
 STALE_AFTER_DAYS = 7
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-SNAPSHOT_DIR = DATA_DIR / "snapshots"
-HEALTH_FILE = DATA_DIR / "source_health.json"
 
 
 @dataclass(frozen=True)

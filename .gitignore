@@ -21,3 +21,6 @@ CLAUDE.md
 FOCUS.md
 docs/
 
+
+# Lambda deployment artefacts, rebuilt by scripts/build_lambda.sh
+build/

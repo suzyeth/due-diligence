@@ -19,14 +19,17 @@ from .agents import (
 )
 from .acknowledgements import load_acknowledged, verdict_key
 from .deadlines import build_calendar, needs_attention
+from .extraction_cache import extract_or_reuse
 from .models import (
     DatedObligation,
     Evidence,
     Finding,
     MtdRuleSet,
+    QuarterlyRules,
     RuleChange,
     SourceHealth,
     UserSituation,
+    VatRules,
     Verdict,
 )
 from .sources import (
@@ -36,7 +39,6 @@ from .sources import (
     is_stale,
     load_snapshot,
     record_health,
-    save_snapshot,
 )
 from .vat import build_vat_obligations
 
@@ -126,8 +128,11 @@ def _diff_rules(previous: dict | None, current: MtdRuleSet) -> tuple[RuleChange,
         return ()
 
     changes: list[RuleChange] = []
+    # Snapshots grew a "rules" wrapper when extraction became cacheable. Read
+    # either shape: an old snapshot on disk is not a reason to lose a diff.
+    stored = previous.get("rules") or previous
     old_phases = {
-        str(p.get("qualifying_income_over_gbp")): p for p in previous.get("phases", [])
+        str(p.get("qualifying_income_over_gbp")): p for p in stored.get("phases", [])
     }
     new_phases = {str(p.qualifying_income_over_gbp): p for p in current.phases}
 
@@ -167,9 +172,19 @@ def run(
     situation: UserSituation,
     source: Source | None = None,
     now: datetime | None = None,
+    acknowledged: frozenset[str] | None = None,
 ) -> RunReport:
+    """One run for one person.
+
+    `acknowledged` is a parameter rather than something read from disk here
+    because "what this person has already been told" is per-person state, and
+    more than one caller is not the CLI. A shared web demo passes an empty set;
+    if it inherited the operator's ledger instead, one visitor acknowledging an
+    item would silence it for everyone.
+    """
     source = source or SOURCES[0]
     now = now or datetime.now(timezone.utc)
+    acknowledged = load_acknowledged() if acknowledged is None else acknowledged
 
     result = fetch(source)
     health = record_health(result)
@@ -183,18 +198,15 @@ def run(
         )
 
     model = build_model()
-    rules = extract_rules(result.text, model=model)
 
+    # Read the prior snapshot first: extract_or_reuse rewrites it.
     previous = load_snapshot(source.key)
-    changes = _diff_rules(previous, rules)
-    save_snapshot(
-        source.key,
-        {
-            "fetched_at": result.fetched_at,
-            "digest": result.digest,
-            "phases": [p.model_dump() for p in rules.phases],
-        },
+    rules, reused = extract_or_reuse(
+        source.key, result, MtdRuleSet, lambda text: extract_rules(text, model=model)
     )
+    # Reuse only happens on an identical digest, and identical bytes cannot have
+    # produced different rules — so there is nothing to diff.
+    changes = () if reused else _diff_rules(previous, rules)
 
     verdict = judge_applicability(rules, situation, today=f"{now:%Y-%m-%d}", model=model)
     finding = Finding(
@@ -227,7 +239,7 @@ def run(
         blind_reason=None,
         obligations=tuple(sorted(obligations + vat_obligations, key=lambda o: o.due_on)),
         schedule_errors=tuple(schedule_errors),
-        acknowledged=load_acknowledged(),
+        acknowledged=acknowledged,
     )
 
 
@@ -252,15 +264,8 @@ def _run_vat(
         # Blind on VAT only. Say so, and produce no VAT finding at all.
         return None, (), result.error or "VAT source fetch failed"
 
-    rules = extract_vat_rules(result.text, model=model)
-    save_snapshot(
-        source.key,
-        {
-            "fetched_at": result.fetched_at,
-            "digest": result.digest,
-            "registration_threshold_gbp": rules.registration_threshold_gbp,
-            "register_within_days_of_month_end": rules.register_within_days_of_month_end,
-        },
+    rules, _ = extract_or_reuse(
+        source.key, result, VatRules, lambda text: extract_vat_rules(text, model=model)
     )
 
     verdict = judge_vat_applicability(rules, situation, today=f"{now:%Y-%m-%d}", model=model)
@@ -311,15 +316,11 @@ def _build_schedule(now: datetime, model) -> tuple[tuple[DatedObligation, ...], 
     if not schedule_result.ok:
         return (), schedule_result.error or "fetch failed"
 
-    quarterly = extract_quarterly_rules(schedule_result.text, model=model)
-    save_snapshot(
+    quarterly, _ = extract_or_reuse(
         schedule_source.key,
-        {
-            "fetched_at": schedule_result.fetched_at,
-            "digest": schedule_result.digest,
-            "deadlines": [d.model_dump() for d in quarterly.deadlines],
-            "grace_tax_year": quarterly.grace_tax_year,
-        },
+        schedule_result,
+        QuarterlyRules,
+        lambda text: extract_quarterly_rules(text, model=model),
     )
     return build_calendar(quarterly, today=now.date()), None
 
