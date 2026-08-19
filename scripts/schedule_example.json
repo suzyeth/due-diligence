@@ -1,0 +1,13 @@
+{
+  "Name": "due-diligence-daily",
+  "Description": "Wakes the agent each morning; it mails only when what needs you changes",
+  "ScheduleExpression": "cron(0 7 * * ? *)",
+  "ScheduleExpressionTimezone": "Europe/London",
+  "FlexibleTimeWindow": { "Mode": "FLEXIBLE", "MaximumWindowInMinutes": 30 },
+  "Target": {
+    "Arn": "arn:aws:scheduler:::aws-sdk:bedrockagentcore:invokeAgentRuntime",
+    "RoleArn": "arn:aws:iam::ACCOUNT_ID:role/due-diligence-scheduler",
+    "RetryPolicy": { "MaximumRetryAttempts": 2, "MaximumEventAgeInSeconds": 3600 },
+    "Input": "{\"AgentRuntimeArn\":\"RUNTIME_ARN\",\"RuntimeSessionId\":\"scheduled-daily-run-0000000000000000000001\",\"ContentType\":\"application/json\",\"Payload\":\"{\\\"person\\\":\\\"demo\\\",\\\"situation\\\":{\\\"is_sole_trader\\\":true,\\\"has_property_income\\\":false,\\\"prior_year_turnover_gbp\\\":68000,\\\"prior_year_label\\\":\\\"2024 to 2025\\\",\\\"rolling_12m_turnover_gbp\\\":96000,\\\"vat_threshold_crossed_in\\\":\\\"2026-06-01\\\",\\\"expects_to_exceed_vat_threshold_soon\\\":false}}\"}"
+  }
+}

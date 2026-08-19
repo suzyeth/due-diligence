@@ -292,9 +292,17 @@ flowchart TB
     GATE -->|no| SILENT
     OUT --> CLI["cli.py<br/><i>exit 10</i>"]
     OUT --> WEB["web/app.py<br/><i>'something needs you'</i>"]
+    OUT --> SCHED["agentcore_app.py<br/><i>notify.py: mail only if changed</i>"]
     SILENT --> CLIQ["cli.py<br/><i>0 bytes, exit 0</i>"]
     SILENT --> WEBQ["web/app.py<br/><i>'nothing needs you'</i>"]
+    SILENT --> SCHEDQ["agentcore_app.py<br/><i>no mail</i>"]
+    SCHED --> SNS["SNS → inbox"]
 ```
+
+Three surfaces, one agent. The CLI has a human who can acknowledge; the web page
+is stateless because it is shared; the scheduled arm has nobody in the loop, so
+it substitutes change-detection for acknowledgement. All three call the same
+`src.pipeline.run` and none of them contains a rule about tax.
 
 The two arms are deliberately independent: a dead VAT page must not suppress an
 MTD conclusion that was verified perfectly well, so each fetches, extracts,
@@ -348,9 +356,50 @@ while their source sat still would be indistinguishable from a real rule change
 The fetch, the digest comparison and the health ledger all still happen every
 run. Only the model call is skipped. The agent never stops looking.
 
-**Not yet done:** AgentCore deployment. The SDK provides no scheduling
-primitive, so the recurring wake-up this product implies needs AgentCore Runtime
-or EventBridge. Today the agent runs on demand, from the CLI or the web page.
+## Running unattended
+
+The CLI and the web page both run because a person asked. The thing the product
+description actually promises is the third arm: it wakes up on its own.
+
+```
+EventBridge Scheduler  ──daily──▶  AgentCore Runtime  ──▶  SNS ──▶  your inbox
+   (carries the situation)          (agentcore_app.py)      (only on change)
+```
+
+The Strands SDK has no scheduling primitive, so the wake-up comes from
+EventBridge Scheduler, whose universal target invokes the agent directly. The
+schedule carries the person's situation in its payload, which keeps the runtime
+itself stateless — watching a second person is a second schedule, not a code
+change.
+
+**The part that needed thought is when it is allowed to mail you.** On the
+command line, acknowledging is what ends a notification. Nobody is in the loop
+here, so the same rule would produce an identical email every morning until the
+deadline passed — the nagging this product replaces, relocated to your inbox.
+
+So the scheduled arm notifies on *change*: `src/notify.py` fingerprints the set
+of reasons the agent wants a human, keeps the last one in S3, and sends only
+when that set differs. Verified against the deployed runtime:
+
+| Run | Needs a human? | Emails you? | |
+|---|---|---|---|
+| 1 | yes | **yes** | first time you are told |
+| 2 | yes | no | nothing changed |
+| 3 | yes | no | still nothing changed |
+| 4 | no | no | it cleared — and it does not write to say so |
+
+An agent that mails you to report that it has nothing to report has missed the
+point.
+
+```bash
+bash scripts/build_agentcore.sh
+bash scripts/deploy_agentcore.sh you@example.com
+```
+
+`build_agentcore.sh` targets **ARM64**, which the Lambda build does not. An
+x86_64 artifact is accepted by the API and then fails asynchronously several
+minutes later with a message about incompatible binaries, so the script checks
+for stray x86_64 objects before it packages anything.
 
 ---
 
