@@ -39,17 +39,28 @@ def scenario_rule_change() -> None:
         print("  no snapshot yet — run run_applicability.py first")
         return
 
-    tampered = dict(snapshot)
-    tampered["phases"] = [dict(p) for p in snapshot["phases"]]
-    if not tampered["phases"]:
-        print("  snapshot has no phases to tamper with")
+    stored = snapshot.get("rules")
+    if not stored or not stored.get("phases"):
+        print("  snapshot has no extracted rules to tamper with")
         return
 
-    original = tampered["phases"][0]["mandatory_from"]
-    tampered["phases"][0]["mandatory_from"] = "2029-04-06"
+    # Doctor the digest as well as the figures, because that is what a real rule
+    # change looks like from here: different bytes on the page, so a different
+    # digest, so the cached extraction is not reused and the fresh reading gets
+    # diffed against what we remembered. Changing only the figures would leave
+    # the digest matching, and the agent would correctly conclude that a page it
+    # has already read has not changed.
+    tampered = dict(snapshot)
+    tampered["digest"] = "0" * 16
+    tampered["rules"] = dict(stored)
+    tampered["rules"]["phases"] = [dict(p) for p in stored["phases"]]
+
+    original = tampered["rules"]["phases"][0]["mandatory_from"]
+    tampered["rules"]["phases"][0]["mandatory_from"] = "2029-04-06"
     save_snapshot(source.key, tampered)
-    print(f"  pretending last week's snapshot said the first phase started 2029-04-06")
-    print(f"  (gov.uk actually says {original})\n")
+    print("  pretending last week's snapshot said the first phase started 2029-04-06")
+    print(f"  (gov.uk actually says {original})")
+    print()
 
     report = run(PERSON)
     for change in report.rule_changes:

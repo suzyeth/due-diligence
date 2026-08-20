@@ -120,3 +120,48 @@ class TestCorruptSnapshot:
         _, reused = extract_or_reuse(SOURCE.key, result("aaa"), MtdRuleSet, extract)
         assert extract.calls == 1
         assert reused is False
+
+
+class TestSnapshotShapeIsAContract:
+    """What the cache writes, the differ has to be able to read.
+
+    These two modules only meet through a JSON file, so nothing checks that they
+    agree. When the cache grew its "rules" wrapper, `_diff_rules` kept reading
+    the old top-level "phases" and rule-change detection broke — silently, since
+    no test covered it and the only thing that exercised it was a demo script.
+    """
+
+    def test_the_differ_reads_what_the_cache_writes(self) -> None:
+        from src.pipeline import _diff_rules
+        from src.sources import load_snapshot
+
+        extract_or_reuse(SOURCE.key, result("aaa"), MtdRuleSet, Counter())
+        written = load_snapshot(SOURCE.key)
+        assert written is not None
+
+        moved = RULES.model_copy(
+            update={
+                "phases": [
+                    RULES.phases[0].model_copy(update={"mandatory_from": "2029-04-06"})
+                ]
+            }
+        )
+        changes = _diff_rules(written, moved)
+
+        assert len(changes) == 1, "a moved start date must be detected as a change"
+        assert changes[0].previous == "2026-04-06"
+        assert changes[0].current == "2029-04-06"
+
+    def test_a_pre_cache_snapshot_still_diffs(self) -> None:
+        """Old snapshots on disk keep working rather than losing a diff."""
+        from src.pipeline import _diff_rules
+
+        legacy = {"digest": "aaa", "phases": [p.model_dump() for p in RULES.phases]}
+        moved = RULES.model_copy(
+            update={
+                "phases": [
+                    RULES.phases[0].model_copy(update={"mandatory_from": "2029-04-06"})
+                ]
+            }
+        )
+        assert len(_diff_rules(legacy, moved)) == 1
