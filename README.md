@@ -1,5 +1,7 @@
 # Due Diligence
 
+[![Test](https://github.com/suzyeth/due-diligence/actions/workflows/test.yml/badge.svg)](https://github.com/suzyeth/due-diligence/actions/workflows/test.yml)
+
 **A background agent that works out which UK tax obligations actually apply to a
 self-employed person — across two schemes running on two different clocks —
 traces every conclusion back to gov.uk, and stays silent unless there is
