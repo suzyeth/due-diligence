@@ -237,7 +237,7 @@ The three ways this is supposed to fail safely:
 python -m pytest tests/ -q
 ```
 
-47 tests over the date arithmetic of both obligations and the silence contract.
+64 tests over the date arithmetic of both obligations and the silence contract.
 No model, no network. Two of them are there to fail loudly if the product's
 central claims quietly stop being true:
 `test_the_extracted_threshold_is_what_gets_reported` (someone hardcoded a
